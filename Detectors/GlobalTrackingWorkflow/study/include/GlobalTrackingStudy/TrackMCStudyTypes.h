@@ -75,7 +75,76 @@ struct MCTrackInfo {
   float getTrackParTPCPar(int i, float b, float x = 90) const;
   float getTrackParTPCPhiSec(float b, float x = 90) const;
 
-  ClassDefNV(MCTrackInfo, 8);
+  // MC truth at the boundaries of the ITS-TPC gap, from the track references, in the sector frame of the
+  // reference position: first ITS reference (innermost layer), last ITS reference before the first TPC one
+  // (outermost layer) and first TPC reference (TPC volume entry, r~79 cm in the Run 3 geometry, i.e. NOT
+  // the first pad row; the full TPC reference list is in trackRefsTPC with storeTPCTrackRefs). Filled only
+  // with trmcconf.storeGapTrackRefs; isValid()==false if not filled or the reference is absent.
+  // E.g. 1-p(trackRefTPCIn)/p(trackRefITSOut) is the true fractional momentum loss between the last ITS
+  // layer and the TPC volume, 1-p(trackRefITSOut)/p(trackRefITSIn) the one inside the ITS.
+  o2::track::TrackPar trackRefITSIn{};
+  o2::track::TrackPar trackRefITSOut{};
+  o2::track::TrackPar trackRefTPCIn{};
+
+  ClassDefNV(MCTrackInfo, 9);
+};
+
+struct ITSTrackMatchInfo { // matching-relevant information of a standalone ITS track (filled with trmcconf.storeMatchInfo)
+  o2::track::TrackParCov trackOut{}; // native outward parameters (highest update point, as used by MatchTPCITS), NOT propagated
+  float tMinMUS = 0.f;               // time bracket in \mus since the TF start: per-track time stamp +- error if valid, otherwise
+  float tMaxMUS = 0.f;               // the ROF bracket (as in MatchTPCITS, w/o its itsTimeStampMarginBC safety margin)
+  float x2x0ToRef = -1.f;            // X/X0 crossed when propagating trackOut to the matching reference X (LUT; -1 if not done/failed)
+  float xRhoToRef = 0.f;             // x*rho [g/cm2] crossed on the same path
+  float lToRef = 0.f;                // path length [cm] on the same path
+  int index = -1;                    // index in the ITS tracks array of the TF (-1: not filled)
+  int rof = -1;                      // ITS tracks ROF index
+  bool timeFromStamp = false;        // tMin/tMax from the per-track time stamp (true) or from the ROF (false)
+  ClassDefNV(ITSTrackMatchInfo, 1);
+};
+
+struct TPCTrackMatchInfo { // matching-relevant information of a standalone TPC track (filled with trmcconf.storeMatchInfo)
+  enum Side : uint8_t { ASideOnly = 0x1,
+                        CSideOnly = 0x2,
+                        BothSides = 0x3 };
+  o2::track::TrackParCov trackIn{}; // native inner parameters of the TPC track, NOT propagated (its Z assumes time0)
+  float time0MUS = 0.f;             // TrackTPC::getTime0 in \mus since the TF start (NB: RecTrack::ts of TPC-only tracks is in TPC time bins)
+  float dTBwdMUS = 0.f;             // TrackTPC::getDeltaTBwd in \mus: max decrement of time0
+  float dTFwdMUS = 0.f;             // TrackTPC::getDeltaTFwd in \mus: max increment of time0
+  float dEdxTot = 0.f;              // TrackTPC::getdEdx().dEdxTotTPC
+  float dEdxMax = 0.f;              // TrackTPC::getdEdx().dEdxMaxTPC
+  float x2x0ToRef = -1.f;           // X/X0 crossed when propagating trackIn to the matching reference X (LUT; -1 if not done/failed)
+  float xRhoToRef = 0.f;            // x*rho [g/cm2] crossed on the same path
+  float lToRef = 0.f;               // path length [cm] on the same path
+  int index = -1;                   // index in the TPC tracks array of the TF (-1: not filled)
+  uint16_t nClsdEdx = 0;            // number of clusters used for the dE/dx (sum over the ROCs)
+  uint8_t side = 0;                 // Side bits
+  ClassDefNV(TPCTrackMatchInfo, 1);
+};
+
+struct ITSMatchCandidate { // every standalone ITS track of the TF as a matching candidate (filled with trmcconf.storeITSCandidates)
+  ITSTrackMatchInfo info{};
+  o2::track::TrackParCov trackRef{}; // trackOut rotated to its own sector and propagated to the matching reference X (as in
+                                     // MatchTPCITS, but w/o the neighbour-sector clones of tracks near the sector edge)
+  o2::MCCompLabel label{};           // MC label as assigned to the ITS track (fake / noise / unset labels kept)
+  int tfID = -1;                     // entry of the "tfInfo" tree
+  uint8_t nCl = 0;
+  uint8_t pattITS = 0;
+  bool refOK = false; // trackRef is valid
+  ClassDefNV(ITSMatchCandidate, 1);
+};
+
+struct TFInfo { // per-TF constants needed to interpret the matching information (filled with trmcconf.storeMatchInfo)
+  uint32_t firstOrbit = 0;  // orbit of the TF start; with the MC labels it identifies duplicated input TFs
+  int tfID = -1;            // TF counter of this process (= entry of the "tfInfo" tree)
+  float bz = 0.f;           // nominal Bz [kG]
+  float vDriftTPC = 0.f;    // TPC drift velocity [cm/\mus] used by the reconstruction
+  float tpcTBinMUS = 0.f;   // TPC time bin [\mus]
+  float itsROFLengthMUS = 0.f;
+  float itsROFBiasMUS = 0.f;
+  float xMatchingRef = 0.f; // MatchTPCITSParams::XMatchingRef
+  int nITSTracks = 0;
+  int nTPCTracks = 0;
+  ClassDefNV(TFInfo, 1);
 };
 
 struct RecTrack {
@@ -148,6 +217,12 @@ struct TrackFamily { // set of tracks related to the same MC label
   int8_t entITSFound = -1; // ITS track for this MC track, regardless if it was matched to TPC of another track
   int8_t flags = 0;
   float tpcT0 = -999.;
+  // filled with trmcconf.storeMatchInfo when entITS>=0 / entTPC>=0: the native (not propagated) ITS and TPC
+  // contributors from which trackITSProp / trackTPCProp are made, their times, dE/dx, per-track material
+  // budgets to X ref and indices (to link to the "itsCand" tree and to detect tracks shared by families)
+  ITSTrackMatchInfo itsMatchInfo{};
+  TPCTrackMatchInfo tpcMatchInfo{};
+  int tfID = -1; // entry of the "tfInfo" tree
 
   bool contains(const o2::dataformats::VtxTrackIndex& ref) const
   {
@@ -171,7 +246,7 @@ struct TrackFamily { // set of tracks related to the same MC label
   int getNTPCClones() const;
   static RecTrack dummyRecTrack; //
 
-  ClassDefNV(TrackFamily, 1);
+  ClassDefNV(TrackFamily, 2);
 };
 
 struct ClResTPCCont {

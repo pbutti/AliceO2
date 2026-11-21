@@ -37,6 +37,9 @@ struct TrackMCStudyConfig : o2::conf::ConfigurableParamHelper<TrackMCStudyConfig
   float maxTPCRefExtrap = 2;                   // max dX to extrapolate the track ref when extrapolating track true posions
   int minITSClForITSoutput = 7;                // create special ITS otput only for long enough tracks
   int decayPDG[5] = {310, 3122, 411, 421, -1}; // decays to study, must end by -1
+  bool storeMatchInfo = false;                 // TrackFamily::itsMatchInfo/tpcMatchInfo/tfID + "tfInfo" tree (ITS-TPC matching studies)
+  bool storeITSCandidates = false;             // "itsCand" tree: every ITS track of the TF (incl. fake/unlabelled) at X ref, as matching candidate
+  bool storeGapTrackRefs = false;              // MCTrackInfo::trackRefITSIn/ITSOut/TPCIn: MC truth at the ITS-TPC gap boundaries
   O2ParamDef(TrackMCStudyConfig, "trmcconf");
 };
 } // namespace o2::trackstudy

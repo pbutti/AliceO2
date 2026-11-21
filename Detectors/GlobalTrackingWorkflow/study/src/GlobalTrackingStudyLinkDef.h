@@ -42,6 +42,11 @@
 
 #pragma link C++ class o2::trackstudy::ITSHitInfo + ;
 #pragma link C++ class std::vector < o2::trackstudy::ITSHitInfo> + ;
+#pragma link C++ class o2::trackstudy::ITSTrackMatchInfo + ;
+#pragma link C++ class o2::trackstudy::TPCTrackMatchInfo + ;
+#pragma link C++ class o2::trackstudy::ITSMatchCandidate + ;
+#pragma link C++ class std::vector < o2::trackstudy::ITSMatchCandidate> + ;
+#pragma link C++ class o2::trackstudy::TFInfo + ;
 
 #pragma link C++ class o2::checkresid::Point + ;
 #pragma link C++ class std::vector < o2::checkresid::Point> + ;
